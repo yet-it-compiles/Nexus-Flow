@@ -7,7 +7,7 @@ from tkinter import filedialog
 from gui_styles import FONT_SUBHEADER
 
 
-def clear_content_frame(content_frame):
+def clear_frame_content(frame_to_clear):
     """
     @TODO
 
@@ -18,11 +18,11 @@ def clear_content_frame(content_frame):
 
     This utility function removes all widgets currently within the content_frame to allow for the display of new content, ensuring that no old widgets are left on the screen.
     """
-    for each_widget in content_frame.winfo_children():
+    for each_widget in frame_to_clear.winfo_children():
         each_widget.destroy()
 
 
-def show_frame_2(content_frame):
+def display_log_analysis_page(content_frame):
     """
     @TODO
 
@@ -33,36 +33,37 @@ def show_frame_2(content_frame):
 
     This function clears the existing content from the content_frame and creates a tabbed interface for viewing log entries (Errors, Warnings, and Clean Logs). It also adds buttons for log analysis, export functionality, and clearing logs. Additionally, a progress bar and status bar are created to provide visual feedback on the log analysis process.
     """
-    clear_content_frame(content_frame)
+    clear_frame_content(content_frame)
 
-    tabview = ctk.CTkTabview(content_frame, width=600)
-    tabview.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
+    """ Defines a tabbed view for the analysis categories """
+    tab_view = ctk.CTkTabview(content_frame, width=600)
+    tab_view.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
 
-    tabview.add("Errors")
-    tabview.add("Warnings")
-    tabview.add("Clean Logs")
+    tab_view.add("Errors")
+    tab_view.add("Warnings")
+    tab_view.add("Clean Logs")
 
-    errors_scroll_frame = ctk.CTkScrollableFrame(tabview.tab("Errors"))
-    errors_scroll_frame.pack(fill="both", expand=True)
+    log_error_frame = ctk.CTkScrollableFrame(tab_view.tab("Errors"))
+    log_error_frame.pack(fill="both", expand=True)
 
-    warnings_scroll_frame = ctk.CTkScrollableFrame(tabview.tab("Warnings"))
-    warnings_scroll_frame.pack(fill="both", expand=True)
+    log_warning_frame = ctk.CTkScrollableFrame(tab_view.tab("Warnings"))
+    log_warning_frame.pack(fill="both", expand=True)
 
-    clean_logs_scroll_frame = ctk.CTkScrollableFrame(tabview.tab("Clean Logs"))
-    clean_logs_scroll_frame.pack(fill="both", expand=True)
+    clean_logs_frame = ctk.CTkScrollableFrame(tab_view.tab("Clean Logs"))
+    clean_logs_frame.pack(fill="both", expand=True)
 
     error_label = ctk.CTkLabel(
-        errors_scroll_frame, text="No Errors Found", font=FONT_SUBHEADER
+        log_error_frame, text="No Errors Found", font=FONT_SUBHEADER
     )
     error_label.pack(pady=20)
 
     warning_label = ctk.CTkLabel(
-        warnings_scroll_frame, text="No Warnings Found", font=FONT_SUBHEADER
+        log_warning_frame, text="No Warnings Found", font=FONT_SUBHEADER
     )
     warning_label.pack(pady=20)
 
     clean_log_label = ctk.CTkLabel(
-        clean_logs_scroll_frame, text="All Logs Clean", font=FONT_SUBHEADER
+        clean_logs_frame, text="All Logs Clean", font=FONT_SUBHEADER
     )
     clean_log_label.pack(pady=20)
 
@@ -71,10 +72,10 @@ def show_frame_2(content_frame):
     )
     analyze_button.grid(row=2, column=0, padx=10, pady=10, sticky="ew")
 
-    export_logs_button = ctk.CTkButton(
+    export_button = ctk.CTkButton(
         content_frame, text="Export Logs", command=export_logs
     )
-    export_logs_button.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
+    export_button.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
 
     clear_logs_button = ctk.CTkButton(content_frame, text="Clear Logs")
     clear_logs_button.grid(row=4, column=0, padx=10, pady=10, sticky="ew")
@@ -97,39 +98,38 @@ def analyze_logs():
 
     Simulates the log analysis process and updates the status bar and progress bar.
 
-    This placeholder function simulates the completion of a log analysis process by updating the progress bar to 100% and updating the status bar to indicate that the log analysis is complete.
+    Placeholder function simulating the completion of a log analysis process by updating the progress bar to 100% and updating the status bar to indicate that the log analysis is complete.
     """
-    update_status("Analyzing logs...")
+    update_status_message("Analyzing logs...")
     progress_bar.set(1.0)
-    update_status("Log analysis complete!")
+    update_status_message("Log analysis complete!")
 
 
 def export_logs():
     """
     @TODO
 
-    Opens a file save dialog for exporting logs and updates the status bar upon completion.
+    Opens file dialog for exporting and updates the status bar when completion.
 
     This function prompts the user with a filedialog to choose a location to save the exported logs. It then updates the status bar to indicate the success of the export operation.
     """
-    export_path = filedialog.asksaveasfilename(
+    is_export_path = filedialog.asksaveasfilename(
         defaultextension=".txt",
         filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
     )
-    if export_path:
-        update_status(f"Logs exported to {export_path}")
+    if is_export_path:
+        update_status_message(f"Logs exported to {is_export_path}")
 
 
-def update_status(message):
+def update_status_message(status_message):
     """
     @TODO
 
     Updates the status bar with the provided message.
 
     Args:
-        message (str): The message to be displayed in the status bar.
+        status_message (str): The message to be displayed in the status bar.
 
-    This function updates the text of the global status_bar widget with the given message to reflect
-    the current state or action of the application.
+    This function updates the text of the global status_bar widget with the given message to reflect the state of the application.
     """
-    status_bar.configure(text=message)
+    status_bar.configure(text=status_message)
