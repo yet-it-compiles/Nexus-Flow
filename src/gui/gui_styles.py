@@ -5,23 +5,27 @@ This module provides the initialization and styling settings for the Modding Too
 import customtkinter as ctk
 from typing import Optional
 
-ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("blue")
+# Set default appearance mode and theme
+LIGHT_MODE = "light"
+DEFAULT_MODE = "dark"
+DEFAULT_THEME = "blue"
+ctk.set_appearance_mode(DEFAULT_MODE)
+ctk.set_default_color_theme(DEFAULT_THEME)
 
 
-# Typography, and Apperance Constants
-APP_WIDTH = 900
-APP_HEIGHT = 700
+# Defines the windows dimensions and font styles
+WINDOW_WIDTH = 900
+WINDOW_HEIGHT = 700
 FONT_HEADER = ("Arial", 24)
 FONT_SUBHEADER = ("Arial", 16)
 FONT_STATUS = ("Arial", 12)
 
 
-def configure_appearance(theme: str = "blue", mode: str = "dark") -> None:
+def set_appearance(theme: str = DEFAULT_THEME, mode: str = DEFAULT_MODE) -> None:
     """
-    Configures the application's appearance mode and theme.
+    Sets the application's appearance mode and theme.
 
-    Parameters:
+    Args:
         theme (str): The color theme to apply (default is 'blue').
         mode (str): The appearance mode ('dark' or 'light', default is 'dark').
 
@@ -32,28 +36,28 @@ def configure_appearance(theme: str = "blue", mode: str = "dark") -> None:
     ctk.set_default_color_theme(theme)
 
 
-def initialize_main_window(
-    width: int = APP_WIDTH, height: int = APP_HEIGHT
+def create_main_window(
+    width: int = WINDOW_WIDTH, height: int = WINDOW_HEIGHT
 ) -> Optional[ctk.CTk]:
     """
-    Initializes the main window for the Modding Tool GUI with the specified dimensions.
+    Creates and initializes the main window for the Modding Auding Tools GUI with the specified dimensions.
 
-    Parameters:
+    Args:
         width (int): The width of the application window (default is 900).
         height (int): The height of the application window (default is 700).
 
     Returns:
-        root (ctk.CTk): The initialized CTk root window instance.
+        Optional[ctk.CTk]: The initialized CTk root window instance or None if initialization fails.
     """
     try:
-        root = ctk.CTk()
-        root.geometry(f"{width}x{height}")
-        root.title("Log Analyzer - Modding Tool")
-        return root
+        main_window = ctk.CTk()
+        main_window.geometry(f"{width}x{height}")
+        main_window.title("Log Analyzer - Modding Tool")
+        return main_window
     except Exception as e:
         print(f"Error initializing the main window: {e}")
         return None
 
 
-# Apply default appearance settings
-configure_appearance()
+# Apply the apps appearance settings
+set_appearance()
