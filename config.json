@@ -1,3 +1,7 @@
-{   "game_directory": "\\Steam Library\\steamapps\\common\\Cyberpunk 2077",
-    "archive_file_directory": "\\Steam Library\\steamapps\\common\\Cyberpunk 2077\\archive\\pc\\mod\\",
-    "modlist_path": "\\Steam Library\\steamapps\\common\\Cyberpunk 2077\\archive\\pc\\mod\\modlist.txt"}
+{
+    "game_directory": "",
+    "modlist_path": "",
+    "archive_file_directory": "",
+    "red_script_directory ": "",
+    "log_files_to_ignore": ""
+}
