@@ -1,33 +1,37 @@
 """
-Log Analysis Script for Cyberpunk 2077
+    Log File Analyzer for Game Development
 
-This script processes all the log files from the Cyberpunk 2077 game directory to classify errors, warnings, and clean logs within. It generates a Markdown report summarizing the findings, including details about specific error and warning occurrences in various log files.
+    This script automates the process of analyzing a specified game directory fils. It does this by walking through each fild and examins every file determining if it has the .log extension. If it does, it will then parse the contents of the file searching for a predefined exception in the form of an error or warning. After identidying all the thrown exceptions in a log, it writes  the exception  to a table and displays the table to the console. The script also keeps track of the total number of logs processed, the number of errors and warnings found, and the number of clean logs that did not contain any exceptions.
 
-Modules:
-    - os: Provides functions for interacting with the operating system.
-    - re: Offers support for regular expressions.
-    - time: Used to simulate delays in processing.
-    - rich.progress: Displays progress bars in the terminal.
-    - rich: Used for colored and stylized terminal printing.
+    Modules:
+    - os, re, json: Standard libraries for file handling, regular expressions, and JSON parsing.
+    - rich: Library used to create enhanced console output with tables, progress bars, and styled text.
+    - time: Used to track script execution time.
+    - Constants: Configurations for log parsing (e.g., exception keywords, patterns).
 
-Functions:
-    - process_log_entry: Processes individual log entries to classify errors and warnings.
-    - classify_log_entries: Classifies log entries from standard logs.
-    - classify_redscript_log_entries: Handles the specific log format of redscript_rCURRENT.log.
-    - generate_summary_table: Generates a summary table in Markdown format.
-    - generate_breakdown_table: Generates detailed breakdown tables for errors, warnings, and clean logs.
-    - process_logs_with_progress: Processes a list of log files and reports errors, warnings, and clean logs.
-    - process_log_files_in_directory: Orchestrates log file processing by scanning a directory for log files.
+    Usage:
+        python <script_name>.py
+
+    Attributes:
+        CONFIG_FILE_PATH (str): Path to the configuration file storing the game directory.
+        EXCEPTION_KEYWORDS (set): Set of keywords for identifying exceptions in logs.
+        TIMESTAMP_PATTERN (Pattern): Regex pattern to identify timestamp entries in logs.
+        EXCEPTION_PATTERN (Pattern): Compiled regex to match exception keywords.
+        WARNING_KEYWORDS (set): Set of keywords specific to warnings.
 """
 
 import os
 import re
-import time
-from rich.progress import Progress
+import json
+from rich.table import Table
+from time import perf_counter
 from rich import print as rprint
+from rich.console import Console
+from rich.padding import Padding
+from rich.progress import Progress, TextColumn, BarColumn, TaskProgressColumn
 
-# Keywords to look for in log files
-IS_EXCEPTION_KEYWORDS = {
+CONFIG_FILE_PATH = "config.json"
+EXCEPTION_KEYWORDS = {
     "WARN",
     "warning",
     "error",
@@ -46,299 +50,313 @@ IS_EXCEPTION_KEYWORDS = {
     "cannot be determined",
 }
 
-TIMESTAMP_REGEX = re.compile(r"^\[\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}")
-EXCEPTION_REGEX = re.compile(
+console = Console()
+TIMESTAMP_PATTERN = re.compile(r"^\[\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}")
+EXCEPTION_PATTERN = re.compile(
     r"\b(?:{})\b".format(
-        "|".join(re.escape(each_key) for each_key in IS_EXCEPTION_KEYWORDS)
+        "|".join(re.escape(keyword) for keyword in EXCEPTION_KEYWORDS)
     ),
     re.IGNORECASE,
 )
 WARNING_KEYWORDS = {"warn", "warning"}
 
 
-def process_log_entry(log_entries, error_list, warning_list, log_file_path):
+def load_game_directory():
     """
-    Processes individual log entries by checking for errors or warnings based on predefined keywords.
-
-    Args:
-        log_entries (list): The log entries that make up a single log entry block.
-        error_list (list): The list to which identified errors are appended.
-        warning_list (list): The list to which identified warnings are appended.
-        log_file_path (str): The file path of the current log file being processed.
-    """
-    every_read_log = "".join(log_entries).strip().replace("|", r"\|")
-
-    if any(keyword in every_read_log for keyword in WARNING_KEYWORDS):
-        warning_list.append((log_file_path, every_read_log))
-    elif EXCEPTION_REGEX.search(every_read_log):
-        error_list.append((log_file_path, every_read_log))
-
-
-def classify_log_entries(log_file_path):
-    """
-    Classifies log entries into errors and warnings by scanning the log file.
-
-    Args:
-        log_file_path (str): The path to the log file being classified.
+    Loads the game directory path from the configuration file.
 
     Returns:
-        tuple: Two lists containing errors and warnings respectively.
+        str | None: Path to the game directory if loaded successfully, None otherwise.
     """
+    try:
+        with open(CONFIG_FILE_PATH, "r") as config_file:
+            config = json.load(config_file)
+            is_game_directory = config.get("game_directory")
 
-    list_of_errors, list_of_warnings, list_of_log_files = [], [], []
-    with open(log_file_path, "r", encoding="utf-8") as log_files:
-        for each_log in log_files:
-            if TIMESTAMP_REGEX.match(each_log):
-                if list_of_log_files:
-                    process_log_entry(
-                        list_of_log_files,
-                        list_of_errors,
-                        list_of_warnings,
-                        log_file_path,
-                    )
-                    list_of_log_files.clear()
-            list_of_log_files.append(each_log)
-        if list_of_log_files:
-            process_log_entry(
-                list_of_log_files, list_of_errors, list_of_warnings, log_file_path
+            if not is_game_directory or not os.path.exists(is_game_directory):
+                print(
+                    "Game directory not found in configuration. Setting up configuration..."
+                )
+                return create_config(config)
+
+            return is_game_directory
+
+    except (FileNotFoundError, json.JSONDecodeError):
+        print("Configuration file missing or unreadable. Setting up configuration...")
+        return create_config({})
+
+
+def create_config(config):
+    """
+    Prompts the user to enter the game directory path and saves it to the configuration file.
+
+    Args:
+        config (dict): Dictionary to store configuration details.
+
+    Returns:
+        str | None: Path to the game directory if correctly configured, None otherwise.
+    """
+    is_game_directory_path = config.get("game_directory")
+    if not is_game_directory_path or not os.path.exists(is_game_directory_path):
+        is_game_directory_path = input(
+            "Enter the full path to the game directory: "
+        ).strip()
+        if os.path.exists(is_game_directory_path):
+            config["game_directory"] = is_game_directory_path
+            with open(CONFIG_FILE_PATH, "w") as config_file:
+                json.dump(config, config_file, indent=4)
+            print(f"Game directory path saved to {CONFIG_FILE_PATH}.")
+        else:
+            print(
+                "The provided game directory path does not exist. Please restart and enter a valid path."
             )
-    return list_of_errors, list_of_warnings
+            return None
+
+    return is_game_directory_path
 
 
-def classify_redscript_log(log_file_path):
+def evaluate_log_entry(log_lines, errors, warnings, log_path):
     """
-    Classifies log entries from a standard log file, separating errors and warnings.
+    Evaluates each log entry for potential errors or warnings.
 
     Args:
-        log_file_path (str): The path to the log file to be classified.
+        log_lines (list[str]): List of log lines to analyze.
+        errors (list[tuple]): List to store identified errors.
+        warnings (list[tuple]): List to store identified warnings.
+        log_path (str): Path of the log file being analyzed.
+    """
+    log_content = "".join(log_lines).strip().replace("|", r"\|")
+    if any(keyword in log_content for keyword in WARNING_KEYWORDS):
+        warnings.append((log_path, log_content))
+    elif EXCEPTION_PATTERN.search(log_content):
+        errors.append((log_path, log_content))
+
+
+def parse_log_entries(log_path):
+    """
+    Parses log entries and categorizes them as errors or warnings.
+
+    Args:
+        log_path (str): Path to the log file.
 
     Returns:
-        tuple: Two lists containing errors and warnings respectively.
+        tuple[list[tuple], list[tuple]]: Lists of errors and warnings identified in the log file.
     """
-    warnings = []
-    current_warning = []
-    is_warning = False
+    errors, warnings, log_lines = [], [], []
+    with open(log_path, "r", encoding="utf-8") as each_log_file:
+        for each_line in each_log_file:
+            if TIMESTAMP_PATTERN.match(each_line):
+                if log_lines:
+                    evaluate_log_entry(log_lines, errors, warnings, log_path)
+                    log_lines.clear()
+            log_lines.append(each_line)
+        if log_lines:
+            evaluate_log_entry(log_lines, errors, warnings, log_path)
+    return errors, warnings
 
-    with open(log_file_path, "r", encoding="utf-8") as file:
-        for each_warning in file:
-            if each_warning.startswith("[WARN"):
-                if current_warning:
-                    warnings.append(
-                        (
-                            log_file_path,
-                            "".join(current_warning).strip(),
-                        )
-                    )
-                    current_warning = []
 
-                is_warning = True
-                current_warning.append(each_warning)
-            elif each_warning.startswith("[INFO"):
+def parse_redscript_log(log_path):
+    """
+    Parses the 'redscript' log for warnings based on custom format.
+
+    Args:
+        log_path (str): Path to the redscript log file.
+
+    Returns:
+        list[tuple]: List of warnings in the redscript log file.
+    """
+    warnings, warning_lines = [], []
+    parsing_warning = False
+    with open(log_path, "r", encoding="utf-8") as each_file:
+        for each_line in each_file:
+            if each_line.startswith("[WARN"):
+                if warning_lines:
+                    warnings.append((log_path, "".join(warning_lines).strip()))
+                    warning_lines.clear()
+                parsing_warning = True
+                warning_lines.append(each_line)
+            elif each_line.startswith("[INFO"):
                 continue
-            elif is_warning:
-                current_warning.append(each_warning)
-                if each_warning.startswith("^^^") or not each_warning.strip():
-                    warnings.append(
-                        (
-                            log_file_path,
-                            "".join(current_warning).strip(),
-                        )
-                    )
-                    current_warning = []
-                    is_warning = False
-
-    if current_warning:
-        warnings.append((log_file_path, "".join(current_warning).strip()))
-
+            elif parsing_warning:
+                warning_lines.append(each_line)
+                if each_line.startswith("^^^") or not each_line.strip():
+                    warnings.append((log_path, "".join(warning_lines).strip()))
+                    warning_lines.clear()
+                    parsing_warning = False
+    if warning_lines:
+        warnings.append((log_path, "".join(warning_lines).strip()))
     return warnings
 
 
-def generate_summary_table(total_logs, errors_found, warnings_found, clean_logs):
-    return (
-        f"\n### **Log Processing Summary**\n\n"
-        f"| **Total Logs Processed** | **Errors Found** | **Warnings Found** | **Clean Logs** |\n"
-        f"|--------------------------|------------------|--------------------|----------------|\n"
-        f"| **{total_logs}**                   | 🔴 **{errors_found}**         | 🟡 **{warnings_found}**           | ✅ **{clean_logs}**       |\n"
-        "---\n"
-    )
-
-
-def generate_breakdown_table(header, icon, logs, category):
+def display_summary_table(total_logs, error_count, warning_count, clean_log_count):
     """
-    Generates a Markdown summary table for log processing statistics.
+    Displays a summary table of log processing results.
 
     Args:
         total_logs (int): Total number of logs processed.
-        errors_found (int): Total number of errors found.
-        warnings_found (int): Total number of warnings found.
-        clean_logs (int): Total number of clean logs (no errors or warnings).
-
-    Returns:
-        str: The generated summary table in Markdown format.
+        error_count (int): Number of error logs found.
+        warning_count (int): Number of warning logs found.
+        clean_log_count (int): Number of clean logs found.
     """
-    if not logs:
-        return ""
-
-    every_parsed_log = {}
-
-    for each_log in logs:
-        if isinstance(each_log, tuple) and len(each_log) == 2:
-            is_log_path, is_log_name = each_log
-        else:
-            raise ValueError(f"Unexpected log format: {each_log}")
-
-        if is_log_path not in every_parsed_log:
-            every_parsed_log[is_log_path] = []
-        every_parsed_log[is_log_path].append(is_log_name)
-
-    report_parts = []
-
-    for is_log_path, log_lines in every_parsed_log.items():
-        log_name = os.path.basename(is_log_path)
-
-        table = (
-            f"\n#### **{header} - {log_name}**\n"
-            f"| **{category}**                   | **Location**                                            |\n"
-            f"|----------------------------------|---------------------------------------------------------|\n"
-        )
-
-        row_count = 0
-        for is_log_name in log_lines:
-            flattened_log = is_log_name.replace("\n", " ").strip()
-            table += f"| {icon} {flattened_log}                | `{is_log_path}`                                            |\n"
-            row_count += 1
-
-        # Append the row count at the end of the table
-        table += f"| **Exceptions Caught:** |    {row_count}                                                    |\n"
-        report_parts.append(table + "---\n")
-
-    return "".join(report_parts)
+    summary_table = Table(title="\nLog Processing Summary")
+    summary_table.add_column("\nTotal Logs Processed", justify="center")
+    summary_table.add_column("Clean Logs", justify="center")
+    summary_table.add_column("Warnings Found", justify="center")
+    summary_table.add_column("Errors Found", justify="center")
+    summary_table.add_row(
+        str(total_logs),
+        f"[green]✅ {clean_log_count}[/green]",
+        f"[yellow]🟡 {warning_count}[/yellow]",
+        f"[red]🔴 {error_count}[/red]",
+    )
+    console.print(Padding(summary_table, (1, 10, 1, 10)))
 
 
-def process_logs_with_progress(log_files):
+def display_log_breakdown(header, icon, logs, category_label):
     """
-    Processes a list of log files while displaying progress, classifying errors, warnings, and clean logs.
+    Displays a breakdown table for errors or warnings with specific log details.
 
     Args:
-        log_files (list): A list of log file paths to process.
+        header (str): Header title for the breakdown.
+        icon (str): Icon representing the category.
+        logs (list[tuple]): List of logs with content and path.
+        category_label (str): Label for the category.
+    """
+    if not logs:
+        return
+    breakdown_table = Table(title=f"{header} Breakdown", show_lines=True)
+    breakdown_table.add_column(f"{category_label}", style="bold", justify="left")
+    breakdown_table.add_column("Location", justify="left")
+    for each_log_path, each_log_content in logs:
+        breakdown_table.add_row(f"{icon} {each_log_content}", each_log_path)
+    console.print(Padding(breakdown_table, (1, 10, 1, 10)))
+
+
+def process_logs(log_file_paths):
+    """
+    Processes each log file, categorizing entries and displaying progress.
+
+    Args:
+        log_file_paths (list[str]): List of log file paths to process.
 
     Returns:
-        tuple: Aggregated counts of errors, warnings, clean logs, and detailed lists of each type.
+        tuple: Summary statistics and categorized log entries.
     """
-    sum_of_exceptions = len(log_files)
-    total_errors = 0
-    total_warnings = 0
-    total_clean_logs = 0
+    total_logs_processed = 0
+    time_elapsed = perf_counter()
+    total_exceptions, total_warnings, total_cleaned = 0, 0, 0
+    error_logs, warning_logs, clean_logs, missing_logs = [], [], [], []
 
-    error_logs_list = []
-    warning_logs_list = []
-    clean_logs_list = []
+    with Progress(
+        TextColumn("[green]Logs Processed..."),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("", total=len(log_file_paths))
 
-    with Progress() as progress:
-        task = progress.add_task("[green]Processing logs...", total=sum_of_exceptions)
+        for each_log_path in log_file_paths:
+            if not os.path.exists(each_log_path):
+                missing_logs.append(each_log_path)
+                progress.advance(task)
+                continue
 
-        for each_log_file_path in log_files:
-            time.sleep(0.03)
-
-            log_name = os.path.basename(each_log_file_path)
+            total_logs_processed += 1
+            log_name = os.path.basename(each_log_path)
 
             if log_name == "redscript_rCURRENT.log":
-                log_warnings = classify_redscript_log(each_log_file_path)
+                log_warnings = parse_redscript_log(each_log_path)
                 log_errors = []
             else:
-                log_errors, log_warnings = classify_log_entries(each_log_file_path)
+                log_errors, log_warnings = parse_log_entries(each_log_path)
 
             if log_errors:
-                total_errors += len(log_errors)
-                error_logs_list.extend(log_errors)
+                total_exceptions += len(log_errors)
+                error_logs.extend(log_errors)
             if log_warnings:
                 total_warnings += len(log_warnings)
-                warning_logs_list.extend(log_warnings)
+                warning_logs.extend(log_warnings)
             if not log_errors and not log_warnings:
-                total_clean_logs += 1
-                clean_logs_list.append((log_name, each_log_file_path))
+                total_cleaned += 1
+                clean_logs.append((log_name, each_log_path))
 
             progress.advance(task)
 
-    # Ensure exactly 6 return values
+        elapsed_time = perf_counter() - time_elapsed
+
+        progress.update(
+            task,
+            description="[green]Logs Processed...[/green]",
+            completed=len(log_file_paths),
+        )
+
+    console.print(f"[cyan]Time Elapsed: {elapsed_time:.2f} seconds[/cyan]")
+
     return (
-        total_errors,
+        total_exceptions,
         total_warnings,
-        total_clean_logs,
-        error_logs_list,
-        warning_logs_list,
-        clean_logs_list,
+        total_cleaned,
+        error_logs,
+        warning_logs,
+        clean_logs,
+        missing_logs,
+        total_logs_processed,
     )
 
 
-def process_log_files_in_directory(game_directory_path):
+def scan_directory_for_logs(directory_path):
     """
-    Orchestrates log file processing by scanning a given game directory for log files and generating a report.
+    Scans a directory for log files, processes each, and displays results.
 
     Args:
-        game_directory_path (str): The path to the game directory containing log files.
-
-    Returns:
-        str: A full report in Markdown format summarizing errors, warnings, and clean logs.
+        directory_path (str): Directory path to scan for log files.
     """
-    log_files = []
-
-    IS_REDSCRIPT_LOG = r"G:\Steam Library\steamapps\common\Cyberpunk 2077\r6\logs\redscript_rCURRENT.log"
-
-    for each_directory, _, each_log_file in os.walk(game_directory_path):
+    log_file_paths = []
+    REDSCRIPT_LOG_PATH = r"G:\Steam Library\steamapps\common\Cyberpunk 2077\r6\logs\redscript_rCURRENT.log"
+    for each_root, _, each_file in os.walk(directory_path):
         log_paths = [
-            os.path.join(each_directory, each_log)
-            for each_log in each_log_file
+            os.path.join(each_root, each_log)
+            for each_log in each_file
             if each_log.endswith(".log")
         ]
         if (
-            each_directory == os.path.dirname(IS_REDSCRIPT_LOG)
-            and os.path.basename(IS_REDSCRIPT_LOG) in each_log_file
+            each_root == os.path.dirname(REDSCRIPT_LOG_PATH)
+            and os.path.basename(REDSCRIPT_LOG_PATH) in each_file
         ):
-            log_files.append(IS_REDSCRIPT_LOG)
+            log_file_paths.append(REDSCRIPT_LOG_PATH)
         else:
-            log_files.extend(log_paths)
+            log_file_paths.extend(log_paths)
 
-    error, warning, clean_logs, error_logs, warning_logs, list_of_clean_logs = (
-        process_logs_with_progress(log_files)
-    )
+    (
+        error_count,
+        warning_count,
+        clean_log_count,
+        error_logs,
+        warning_logs,
+        clean_logs,
+        missing_logs,
+        logs_processed,
+    ) = process_logs(log_file_paths)
+    display_summary_table(logs_processed, error_count, warning_count, clean_log_count)
+    display_log_breakdown("Errors", "🔴", error_logs, "Error Logs")
+    display_log_breakdown("Warnings", "🟡", warning_logs, "Warning Logs")
 
-    report_sections = []
-    report_sections.append(
-        generate_summary_table(
-            len(log_files), len(error_logs), len(warning_logs), clean_logs
-        )
-    )
-    report_sections.append(
-        generate_breakdown_table("Error Breakdown", "🔴", error_logs, "Error Logs")
-    )
-    report_sections.append(
-        generate_breakdown_table(
-            "Warning Breakdown", "🟡", warning_logs, "Warning Logs"
-        )
-    )
+    if clean_logs:
+        clean_logs_table = Table(title="Clean Logs Breakdown", show_lines=True)
+        clean_logs_table.add_column("Log Name", justify="left")
+        clean_logs_table.add_column("Location", justify="left")
+        for each_log_name, each_log_path in clean_logs:
+            clean_logs_table.add_row(f"✅ {each_log_name}", each_log_path)
+        console.print(Padding(clean_logs_table, (1, 10, 1, 10)))
 
-    if list_of_clean_logs:
-        log_list_to_md_table = (
-            "\n#### **Clean Logs Breakdown**\n"
-            "| **Log Name**                   | **Location**                                            |\n"
-            "|--------------------------------|---------------------------------------------------------|\n"
-        )
-        for each_log_file_name, each_log_file_path in list_of_clean_logs:
-            log_list_to_md_table += f"| ✅ {each_log_file_name}                | `{each_log_file_path}`                                            |\n"
-
-        report_sections.append(log_list_to_md_table + "---\n")
-
-    return "".join(report_sections)
+    if missing_logs:
+        missing_logs_table = Table(title="Logs Not Found", show_lines=True)
+        missing_logs_table.add_column("Missing Log File Path", justify="left")
+        for each_missing_log_path in missing_logs:
+            missing_logs_table.add_row(f"{each_missing_log_path}")
+        console.print(Padding(missing_logs_table, (1, 10, 1, 10)))
 
 
 if __name__ == "__main__":
-    GAME_DIRECTORY_PATH = r"G:\Steam Library\steamapps\common\Cyberpunk 2077"
-    markdown_analysis_report = process_log_files_in_directory(GAME_DIRECTORY_PATH)
-
-    with open("Log File Analysis.md", "w", encoding="utf-8") as markdown_file:
-        markdown_file.write(markdown_analysis_report)
-
-    rprint(
-        f"\n[green]Success! ✅ Your markdown report has been generated: Log_Report_Analysis.md[/green]"
-    )
+    GAME_DIRECTORY_PATH = load_game_directory()
+    scan_directory_for_logs(GAME_DIRECTORY_PATH)
