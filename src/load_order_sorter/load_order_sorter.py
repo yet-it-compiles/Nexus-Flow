@@ -19,49 +19,65 @@ Functions:
     - sort_archive_files(): Sorts the mod files in alphabetical ASCII order.
     - apply_custom_mod_order_rules(): Applies user-defined custom sorting rules to reorder mods.
     - show_progress_bar(): Manages the display of the progress bar for task progress.
-    - get_modlist_path(): Opens a file dialog for the user to select the `modlist.txt` file.
     - manage_mod_load_order(): Coordinates the full process of loading, sorting, and saving the mod load order.
 """
 
 import os
 import json
-from pathlib import Path
 from rich import print as rprint
-from tkinter import Tk, filedialog
 from rich.progress import Progress
 
-CONFIG_FILE = "config.json"
+CONFIG_FILE_PATH = "config.json"
 
 
-def load_config():
+def load_modlist_path():
     """
     Loads the configuration file to retrieve the saved modlist.txt path.
 
     Returns:
         str or None: The saved path from the config file, or None if no valid path is found.
     """
-    if not os.path.exists(CONFIG_FILE):
-        return None
+    try:
+        with open(CONFIG_FILE_PATH, "r") as config_file:
+            config = json.load(config_file)
+            modlist_path = config.get("modlist_directory")
+            if not modlist_path or not os.path.exists(modlist_path):
+                print(
+                    "Modlist.txt file not found in configuration. Setting up configuration..."
+                )
+                return save_config(config)
 
-    with open(CONFIG_FILE, "r") as config_file:
-        config = json.load(config_file)
-        modlist_path = config.get("modlist_path", None)
-
-        if modlist_path and os.path.exists(modlist_path):
             return modlist_path
-        return None
+
+    except (FileNotFoundError, json.JSONDecodeError):
+        print("Configuration file missing. Setting up configuration...")
+        return save_config({})
 
 
-def save_config(modlist_path):
+def save_config(config):
     """
     Saves the modlist.txt path to the configuration file for easier future use.
 
     Args:
         modlist_path (str): The path to modlist.txt to be saved in the config file.
     """
-    config = {"modlist_path": str(modlist_path)}
-    with open(CONFIG_FILE, "w") as config_file:
-        json.dump(config, config_file)
+    modlist_directory = config.get("modlist_directory")
+    if not modlist_directory or not os.path.exists(modlist_directory):
+        modlist_directory = input(
+            "Enter the full path to the modlist.txt file: "
+        ).strip()
+        if os.path.exists(modlist_directory):
+            config["modlist_path"] = modlist_directory
+            with open(CONFIG_FILE_PATH, "w") as config_file:
+                json.dump(config, config_file, indent=4)
+            print(f"Modlist path saved to {CONFIG_FILE_PATH}.")
+        else:
+            print(
+                "The provided modlist.txt path does not exist. Please restart and enter a valid path."
+            )
+            return None
+
+    return modlist_directory
 
 
 def read_load_order(load_order_path):
@@ -80,16 +96,10 @@ def read_load_order(load_order_path):
     """
     try:
         with open(load_order_path, "r") as load_order_file:
-            for each_archive_file in load_order_file:
-                yield each_archive_file.rstrip("\n")
-    except FileNotFoundError:
-        print(
-            f"[ERROR] Could not find modlist.txt at '{load_order_path}'. Please check the file path and try again."
-        )
-    except IOError:
-        print(
-            f"[ERROR] Unable to read modlist.txt at '{load_order_path}'. Ensure the file is accessible."
-        )
+            return [each_archive.strip() for each_archive in load_order_file]
+    except (FileNotFoundError, IOError) as e:
+        rprint(f"[ERROR] {e}")
+        return []
 
 
 def write_load_order(load_order_path, archive_list):
@@ -105,27 +115,12 @@ def write_load_order(load_order_path, archive_list):
     """
     try:
         with open(load_order_path, "w") as load_order_file:
-            load_order_file.writelines([archive + "\n" for archive in archive_list])
-    except IOError:
-        print(
-            f"[ERROR] Failed to write to the load order file at '{load_order_path}'. Ensure write permissions are granted."
-        )
+            load_order_file.writelines(f"{archive}\n" for archive in archive_list)
+    except IOError as e:
+        rprint(f"[ERROR] {e}")
 
 
-def sort_archive_files(mod_archive_list):
-    """
-    Sorts the list of .archive files based on the games default alphebetrical ASCII sorting.
-
-    Args:
-        mod_archive_list (list): List of mod .archive filenames to be sorted.
-
-    Returns:
-        list: The sorted list of mod .archive filenames, ordered by ASCII sequence.
-    """
-    return sorted(mod_archive_list)
-
-
-def apply_custom_mod_order_rules(list_of_archive_files, custom_order_rules):
+def applies_custom_mod_order_rules(archive_list, custom_order_rules):
     """
     Applies the user specified custom load order, allowing the user to choose which mod overwrites another resulting in conflict winning changes
 
@@ -144,135 +139,107 @@ def apply_custom_mod_order_rules(list_of_archive_files, custom_order_rules):
     Raises:
         ValueError: If the mod_archive_list contains missing or invalid entries that contradict the rules.
     """
-    priority_archive_file = {}
-    overridden_mod_count = 0
+    total_mods_overridden = 0
+    set_of_archives = set(archive_list)
 
-    # Convert the list to a set for faster lookups
-    set_of_archives = set(list_of_archive_files)
-
-    # Collect priority mods to re-order based on the user defined order
-    for each_archive_file, custom_sorting_rule in custom_order_rules.items():
-        priority_archive_file[each_archive_file] = []
-        for each_archive_to_sort in custom_sorting_rule:
-            if each_archive_to_sort in set_of_archives:
-                priority_archive_file[each_archive_file].append(each_archive_to_sort)
-                set_of_archives.remove(each_archive_to_sort)
-                overridden_mod_count += 1
-
-    # Sort the remaining archives alphabetically by alphebetical ASCII
-    sorted_archive_list = sort_archive_files(list(set_of_archives))
-
-    # Reinsert the specified priority archives according to custom rules
-    for each_archive_file, mods in priority_archive_file.items():
-        if each_archive_file in sorted_archive_list:
-            base_index = sorted_archive_list.index(each_archive_file)
-            for each_archive_to_resort in reversed(mods):
-                sorted_archive_list.insert(base_index, each_archive_to_resort)
-        else:
-            sorted_archive_list.extend(mods)
-
-    return sorted_archive_list, overridden_mod_count
-
-
-def show_progress_bar(progress_task, task_description, total_steps):
-    """
-    Displays a progress bar to show progress of modlist.txt sort
-
-    Args:
-        progress_task (Progress): The progress task being managed.
-        task_description (str): A description of the task to display on the progress bar.
-        total_steps (int): Total steps the task will complete.
-    """
-    return progress_task.add_task(f"[green]{task_description}...", total=total_steps)
-
-
-def get_modlist_path():
-    """
-    Opens a file dialog to allow the user to select the 'modlist.txt' file.
-
-    Returns:
-        Path: The full path to the selected 'modlist.txt' file.
-    """
-    root = Tk()
-    root.withdraw()
-    rprint("[yellow][INFO][/yellow] Please select the modlist.txt file...")
-
-    file_path = filedialog.askopenfilename(
-        title="Select modlist.txt",
-        filetypes=[("Text Files", "*.txt")],
-        initialdir=os.path.expanduser("~"),
-    )
-
-    if not file_path:
-        rprint(
-            "[red][ERROR][/red] No file was selected. Please try selecting modlist.txt and try again."
+    load_order_rules = {
+        each_mod_requirement: each_required_dependencies
+        for each_mod_requirement, each_required_dependencies in custom_order_rules.items()
+        if each_mod_requirement in set_of_archives
+        and all(
+            each_required_dependency in set_of_archives
+            for each_required_dependency in each_required_dependencies
         )
-        exit()
+    }
 
-    return Path(file_path)
+    custom_load_order = []
+    for (
+        each_mod_requirement,
+        each_required_dependencies,
+    ) in load_order_rules.items():
+        for each_required_dependency in each_required_dependencies:
+            if each_required_dependency in set_of_archives:
+                set_of_archives.remove(each_required_dependency)
+                custom_load_order.append(each_required_dependency)
+                total_mods_overridden += 1
+
+    remaining_archives = sorted(set_of_archives)
+
+    remaining_archives = sorted(set_of_archives)
+
+    for (
+        each_mod_requirement,
+        each_required_dependencies,
+    ) in load_order_rules.items():
+        index = (
+            remaining_archives.index(each_mod_requirement)
+            if each_mod_requirement in remaining_archives
+            else len(remaining_archives)
+        )
+        for each_required_dependency in reversed(each_required_dependencies):
+            remaining_archives.insert(index, each_required_dependency)
+
+    final_order = custom_load_order + remaining_archives
+    return final_order, total_mods_overridden
 
 
-def manage_mod_load_order():
+def build_custom_load_order():
+    modlist_path = load_modlist_path()
+    if not modlist_path or not os.path.exists(modlist_path):
+        rprint("[ERROR] No valid modlist.txt file found or selected.")
+        return
+
     """
-    The function reads the initial 'modlist.txt' file and applies the user specified custom sorting rules. After processing, the 'modlist.txt' is opened so the user can view the changes.
+    The custom_order_rules dictionary contains the user-defined rules for the load order of mods. To use it, the mod to be loaded first should be the key, and the mods that should be loaded before it should be in the list of values.
 
-    Raises:
-        FileNotFoundError: If the 'modlist.txt' file is missing.
-        IOError: If there is an issue reading or writing the mod load order file.
+    "key": ["value1", "value2", ...]
     """
-    load_order_path = load_config()
-
-    if load_order_path is None:
-        load_order_path = get_modlist_path()
-        save_config(load_order_path)
-
-    # Dictionary containing the custom load order the user wants to apply
     custom_order_rules = {
         "!!!!!4k bulletholes.archive": [
             "dxhud_lite.archive",
             "dxhud_quest.archive",
             "dxstreamlined.archive",
+            "dxstreamlined_hudpos.archive",
         ],
         "!!!Fire FX Extras.archive": ["00Immersive_Flash.archive"],
-        "HD Reworked Project.archive": ["Preem Water 2.0 - Pure.archive"],
+        "HD Reworked Project.archive": ["Preem Water 2.0 - Canon.archive"],
+        "Better Surfaces Textures.archive": ["!!!!!4k bulletholes.archive"],
+        "Better Surfaces Textures.archive": ["ETO_1.1_4K.archive"],
+        "GymfiendTankPatternsXL.archive": ["GymfiendTankXL.archive"],
+        "ETO_1.1_4K.archive": [
+            "Preem Water 2.0 - Pure.archive",
+            "Preem Shores.archive",
+        ],
+        "HD Reworked Project.archive": ["TreesVegetations.archive"],
+        "00_0MASCV_shoe patch.archive.archiv": [
+            "meluminary_mascv_bovver_boot_gymfiend.archive",
+            "meluminary_mascv_elegant_shoes_gymfiend.archive",
+        ],
+        "basegame_texture_HanakoNoMakeup.archive": ["zz-NPCs-Hanako.archive"],
     }
 
-    # Defines the progress bar, which acts as a representation of how long until the sorting is completed.
     with Progress() as progress:
-        sorted_loadorder_result = show_progress_bar(
-            progress, "Processing load order", total_steps=100
-        )
+        task = progress.add_task("[green]Processing load order...", total=100)
 
-        # Load the current archive file names / load order from the file
-        initial_archive_loadorder = list(read_load_order(load_order_path))
-
-        if not initial_archive_loadorder:
-            rprint(
-                "[yellow][INFO][/yellow] The load order file appears to be empty or could not be read. Please check the path and try again."
-            )
+        initial_load_order = read_load_order(modlist_path)
+        if not initial_load_order:
+            rprint("\n[yellow][INFO][/yellow] No valid load order found.")
             return
 
-        progress.update(sorted_loadorder_result, advance=50)
-
-        # Apply custom order rules and counts how many files were re-ordered
-        sorted_archive_files, overridden_mod_count = apply_custom_mod_order_rules(
-            initial_archive_loadorder, custom_order_rules
+        progress.update(task, advance=50)
+        final_order, overridden_count = applies_custom_mod_order_rules(
+            initial_load_order, custom_order_rules
         )
+        progress.update(task, advance=30)
 
-        progress.update(sorted_loadorder_result, advance=30)
+        write_load_order(modlist_path, final_order)
+        progress.update(task, advance=20)
 
-        # Writes the sorted, and custom load order back to modlist.txt
-        write_load_order(load_order_path, sorted_archive_files)
-
-        progress.update(sorted_loadorder_result, advance=20)
-
-        rprint(
-            f"[green][SUCCESS][/green] Your custom load order was successfully applied for {overridden_mod_count} mod{'s' if overridden_mod_count != 1 else ''} to modlist.txt!"
-        )
-
-        # Open modlist.txt for review after sorting
-        os.startfile(load_order_path)
+    rprint(
+        f"[green][SUCCESS][/green] Custom load order applied for {overridden_count} mod(s) in modlist.txt."
+    )
+    os.startfile(modlist_path)
 
 
 if __name__ == "__main__":
-    manage_mod_load_order()
+    build_custom_load_order()
