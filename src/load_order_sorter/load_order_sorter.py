@@ -12,14 +12,12 @@ Modules:
     - rich.progress: Displays a progress bar to track the sorting progress.
 
 Functions:
-    - load_config(): Loads the configuration file to retrieve the saved path to `modlist.txt`.
-    - save_config(): Saves the path to `modlist.txt` in the configuration file.
-    - read_load_order(): Reads the load order from the `modlist.txt` file.
-    - write_load_order(): Writes the updated load order back to the `modlist.txt` file.
-    - sort_archive_files(): Sorts the mod files in alphabetical ASCII order.
-    - apply_custom_mod_order_rules(): Applies user-defined custom sorting rules to reorder mods.
-    - show_progress_bar(): Manages the display of the progress bar for task progress.
-    - manage_mod_load_order(): Coordinates the full process of loading, sorting, and saving the mod load order.
+    - load_modlist_path(): Loads the configuration file to retrieve the saved path to `modlist.txt`.
+    - save_config(config): Saves the path to `modlist.txt` in the configuration file.
+    - read_load_order(load_order_path): Reads the load order from the `modlist.txt` file.
+    - write_load_order(load_order_path, archive_list): Writes the updated load order back to the `modlist.txt` file.
+    - applies_custom_mod_order_rules(archive_list, custom_order_rules): Applies user-defined custom sorting rules to reorder mods.
+    - build_custom_load_order(): Coordinates the full process of loading, sorting, and saving the mod load order.
 """
 
 import os
